@@ -15,20 +15,20 @@ curl -fsSL https://raw.githubusercontent.com/flexiblepackage/trctl/main/install.
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/flexiblepackage/trctl/main/install.sh \
-  | TRCTL_VERSION=v0.2.0 TRCTL_INSTALL_DIR=./bin sh
+  | TRCTL_VERSION=v0.3.0 TRCTL_INSTALL_DIR=./bin sh
 ```
 
 | variable | meaning |
 |---|---|
-| `TRCTL_VERSION` | tag to install, e.g. `v0.2.0`. Defaults to the latest release, and warns |
+| `TRCTL_VERSION` | tag to install, e.g. `v0.3.0`. Defaults to the latest release, and warns |
 | `TRCTL_INSTALL_DIR` | where the binary goes. Defaults to `/usr/local/bin` |
 
 The installer verifies the download against the release's `checksums.txt` and refuses to install if the
 hash does not match or if no checksum tool is available. Or do it by hand:
 
 ```sh
-curl -fsSLO https://github.com/flexiblepackage/trctl/releases/download/v0.2.0/trctl_linux_amd64
-curl -fsSLO https://github.com/flexiblepackage/trctl/releases/download/v0.2.0/checksums.txt
+curl -fsSLO https://github.com/flexiblepackage/trctl/releases/download/v0.3.0/trctl_linux_amd64
+curl -fsSLO https://github.com/flexiblepackage/trctl/releases/download/v0.3.0/checksums.txt
 sha256sum -c checksums.txt
 chmod +x trctl_linux_amd64
 ```
@@ -36,10 +36,40 @@ chmod +x trctl_linux_amd64
 ## Use
 
 ```
-trctl run create   -config runs.toml -run <key> -ids-file <file> [-dry-run] [-output json]
+trctl run create   -config runs.toml -run <key> (-ids-file <file> | -results <json>) [-dry-run] [-output json]
 trctl run update   -id <run> [-name …] [-refs …] [-set-cases -ids-file <file> -confirm]
-trctl results push -id <run> -field <case field> (-results <json> | -ids-file <file> -status <name>) [-output json]
+trctl results push -id <run> [-field <case field>] (-results <json> | -ids-file <file> -status <name>) [-output json]
 ```
+
+### Naming the cases
+
+Two ways, and they differ in what they can catch.
+
+**By a join field** (`-ids-file`) matches each value against the case field named by the config's
+`join_field`. Because the value identifies the test, a renamed or moved test has no matching case, and
+the build fails naming it — the selection diff is the drift detector.
+
+**By case id** (`-results`) takes a JSON file whose entries carry `case_id`, for when whatever produced
+the results already knows which case each one belongs to. `-field` is then unnecessary. This path still
+refuses an id that is not in the target suite, so a typo, a deleted case or an id from another suite is
+caught; what it cannot catch is an id pointing at the wrong case in the same suite.
+
+**The same results file drives both commands**, so a run's contents and the results pushed into it
+cannot disagree:
+
+```sh
+run_id=$(trctl run create -config runs.toml -run nightly -results results.json -output json | jq -r .run.id)
+trctl results push -id "$run_id" -results results.json -output json
+```
+
+```json
+[
+  {"case_id": 101, "status_id": 1, "elapsed": "2s"},
+  {"case_id": 102, "status_id": 5, "elapsed": "3s", "comment": "AssertionError: expected 200, got 500"}
+]
+```
+
+`status_id` may be given as `status` instead, naming the status as this instance spells it.
 
 Credentials come from the environment, never from flags — flags land in CI logs:
 
